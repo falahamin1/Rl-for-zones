@@ -24,12 +24,12 @@ def train_and_evaluate(episodes=5000):
             state = next_state
         
         # Decay exploration over time
-        if agent.epsilon > 0.01:
-            agent.epsilon *= 0.999
+        agent.decay_epsilon()
 
     print("Training Complete.\n")
     display_policy(agent, env)
-    inspect_q_table(agent)
+    inspect_all_q_states(agent)
+    print_symbolic_policy_atlas(agent, env)
 
 def display_policy(agent, env):
     """Prints the spatial policy for different symbolic time zones."""
@@ -82,6 +82,78 @@ def inspect_q_table(agent):
         sample_state = (pos, True, matrices[0])
         q_values = agent.q_table[sample_state]
         print(f"   Example Actions (U, D, L, R, B): {np.round(q_values, 2)}")
+
+def inspect_all_q_states(agent):
+    print("\n=== FULL Q-TABLE INSPECTOR ===")
+    print(f"Total Unique States Learned: {len(agent.q_table)}")
+    
+    # Group by position
+    pos_states = {}
+    for state in agent.q_table.keys():
+        pos, gate_open, matrix = state
+        if pos not in pos_states:
+            pos_states[pos] = []
+        pos_states[pos].append(matrix)
+
+    # Action names for clarity
+    action_names = ["UP", "DOWN", "LEFT", "RIGHT", "PRESS"]
+
+    for pos, matrices in sorted(pos_states.items()):
+        print(f"\nPosition {pos}:")
+        
+        for i, matrix in enumerate(matrices):
+            state = (pos, True, matrix)
+            q_values = agent.q_table[state]
+            
+            # We don't have the original Federation object here, but 
+            # we can see the differences in the raw matrix values.
+            # Printing the matrix tuple helps identify which 'time' this is.
+            print(f"  Zone {i+1} (Matrix): {matrix}")
+            
+            # Format the Q-values nicely
+            val_str = " | ".join([f"{action_names[a]}: {q_values[a]:.2f}" for a in range(5)])
+            print(f"    Q-Values -> {val_str}")
+
+def print_symbolic_policy_atlas(agent, env):
+    action_symbols = {0: "↑", 1: "↓", 2: "←", 3: "→", 4: "Ⓑ"}
+    # The time points we want to inspect (matching your environment's steps)
+    time_points = [3, 6, 11, 14, 17]
+    
+    print("\n=== THE SYMBOLIC POLICY ATLAS ===")
+    
+    for t in time_points:
+        # 1. Recreate the DBM matrix for this specific time to use as a lookup key
+        test_zone = (env.ctx.t_gate >= t) & (env.ctx.t_gate <= env.max_time)
+        dbm_list = test_zone.to_dbm_list()
+        
+        if not dbm_list: continue # Skip if time is out of bounds
+        
+        raw_matrix = dbm_list[0].to_matrix(mode="raw")
+        matrix_key = tuple(tuple(row) for row in raw_matrix)
+        
+        print(f"\n[Time: {t}s] Matrix Key: {matrix_key}")
+        print("-" * 20)
+
+        for y in range(env.grid_size - 1, -1, -1):
+            row = []
+            for x in range(env.grid_size):
+                state = ((x, y), True, matrix_key)
+                
+                if (x, y) == env.goal:
+                    row.append(" [G] ")
+                elif (x, y) == env.obstacle:
+                    row.append(" [X] ")
+                elif state in agent.q_table:
+                    # Check if the agent has actually learned something here
+                    q_vals = agent.q_table[state]
+                    if np.all(q_vals == 0):
+                        row.append("  ?  ") # Explored but no reward propagated
+                    else:
+                        best_action = np.argmax(q_vals)
+                        row.append(f"  {action_symbols[best_action]}  ")
+                else:
+                    row.append("  .  ") # Never visited this tile at this time
+            print("".join(row))
 
 if __name__ == "__main__":
     train_and_evaluate(episodes=100000)

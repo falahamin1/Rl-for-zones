@@ -102,9 +102,14 @@ class MarshlandSprintEnv:
         self.pos = (new_x, new_y)
         obs = self._get_obs()
 
-        if self.gate_open and self.zone.is_empty():
-            if self.debug: print("!!! TERMINAL: GATE CLOSED (ZONE EMPTY) !!!")
-            return obs, -100, True
+        if self.zone.is_empty():
+
+            if self.gate_open:
+                if self.debug: print("!!! TERMINAL: GATE CLOSED (ZONE EMPTY) !!!")
+                return obs, -100, True
+            else:
+                if self.debug: print("!!! TERMINAL: TIME EXPIRED (ZONE EMPTY) !!!")
+                return obs, -100, True
 
         if self.pos == self.goal and self.gate_open:
             if self.debug: print("!!! TERMINAL: GOAL REACHED !!!")
