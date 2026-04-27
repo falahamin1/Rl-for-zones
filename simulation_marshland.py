@@ -1,7 +1,6 @@
 
 from marshland_example import MarshlandSprintEnv
 from TabularQ import QLearningAgent
-import pyudbm
 import numpy as np
 
 
@@ -9,11 +8,11 @@ def train_and_evaluate(episodes=5000):
     # Initialize environment and agent
     # We turn debug=False during training to speed it up
     env = MarshlandSprintEnv(debug=False)
-    agent = QLearningAgent(action_size=5)
+    agent = QLearningAgent(action_size=4)
 
     print(f"Training agent for {episodes} episodes...")
 
-    for i in range(episodes):
+    for _ in range(episodes):
         state = env.reset()
         done = False
         
@@ -31,27 +30,33 @@ def train_and_evaluate(episodes=5000):
     inspect_all_q_states(agent)
     print_symbolic_policy_atlas(agent, env)
 
-def display_policy(agent, env):
-    """Prints the spatial policy for different symbolic time zones."""
-    actions_map = {0: "↑", 1: "↓", 2: "←", 3: "→", 4: "Ⓑ"}
-    
-    # We sample two time profiles:
-    # 1. Early (t_min = 3) - Plenty of time left
-    # 2. Late  (t_min = 14) - Running out of time (after a slip)
-    
-    for t_val in [3, 14]:
-        print(f"--- Policy for Zone: ({t_val} <= t_gate <= 20) ---")
-        
-        # Create a dummy DBM matrix for this time value to query the Q-table
-        ctx = pyudbm.Context(['t_gate'], name='c')
-        test_zone = (ctx.t_gate >= t_val) & (ctx.t_gate <= 20)
-        raw_matrix = test_zone.to_dbm_list()[0].to_matrix(mode="raw")
-        matrix_tuple = tuple(tuple(row) for row in raw_matrix)
+def _get_learned_zones(agent, env):
+    """Returns [(t_min, matrix_key), ...] for every zone the agent visited, sorted by t_min."""
+    learned_matrices = {matrix for (_, _, matrix) in agent.q_table.keys()}
+    zone_list = []
+    seen = set()
+    for t_min in range(env.max_time + 1):
+        zone = (env.ctx.t_gate >= t_min) & (env.ctx.t_gate <= env.max_time)
+        dbm_list = zone.to_dbm_list()
+        if not dbm_list:
+            continue
+        matrix_key = tuple(tuple(row) for row in dbm_list[0].to_matrix(mode="raw"))
+        if matrix_key in learned_matrices and matrix_key not in seen:
+            zone_list.append((t_min, matrix_key))
+            seen.add(matrix_key)
+    return sorted(zone_list)
 
-        for y in range(2, -1, -1):
+
+def display_policy(agent, env):
+    """Prints the spatial policy grid for every symbolic zone the agent learned."""
+    action_symbols = {0: "↑", 1: "↓", 2: "←", 3: "→"}
+
+    for t_min, matrix_key in _get_learned_zones(agent, env):
+        print(f"--- Policy for Zone: (t_gate >= {t_min}, budget: {env.max_time - t_min}s) ---")
+        for y in range(env.grid_size - 1, -1, -1):
             row_str = ""
-            for x in range(3):
-                state = ((x, y), True, matrix_tuple)
+            for x in range(env.grid_size):
+                state = ((x, y), True, matrix_key)
                 if (x, y) == env.goal:
                     row_str += " [G] "
                 elif (x, y) == env.obstacle:
@@ -60,7 +65,7 @@ def display_policy(agent, env):
                     row_str += "  .  "
                 else:
                     best_act = np.argmax(agent.q_table[state])
-                    row_str += f"  {actions_map[best_act]}  "
+                    row_str += f"  {action_symbols[best_act]}  "
             print(row_str)
         print()
     
@@ -81,7 +86,7 @@ def inspect_q_table(agent):
         # Print a few example actions for the first matrix found
         sample_state = (pos, True, matrices[0])
         q_values = agent.q_table[sample_state]
-        print(f"   Example Actions (U, D, L, R, B): {np.round(q_values, 2)}")
+        print(f"   Example Actions (U, D, L, R): {np.round(q_values, 2)}")
 
 def inspect_all_q_states(agent):
     print("\n=== FULL Q-TABLE INSPECTOR ===")
@@ -96,7 +101,7 @@ def inspect_all_q_states(agent):
         pos_states[pos].append(matrix)
 
     # Action names for clarity
-    action_names = ["UP", "DOWN", "LEFT", "RIGHT", "PRESS"]
+    action_names = ["UP", "DOWN", "LEFT", "RIGHT"]
 
     for pos, matrices in sorted(pos_states.items()):
         print(f"\nPosition {pos}:")
@@ -111,48 +116,36 @@ def inspect_all_q_states(agent):
             print(f"  Zone {i+1} (Matrix): {matrix}")
             
             # Format the Q-values nicely
-            val_str = " | ".join([f"{action_names[a]}: {q_values[a]:.2f}" for a in range(5)])
+            val_str = " | ".join([f"{action_names[a]}: {q_values[a]:.2f}" for a in range(4)])
             print(f"    Q-Values -> {val_str}")
 
 def print_symbolic_policy_atlas(agent, env):
-    action_symbols = {0: "↑", 1: "↓", 2: "←", 3: "→", 4: "Ⓑ"}
-    # The time points we want to inspect (matching your environment's steps)
-    time_points = [3, 6, 11, 14, 17]
-    
-    print("\n=== THE SYMBOLIC POLICY ATLAS ===")
-    
-    for t in time_points:
-        # 1. Recreate the DBM matrix for this specific time to use as a lookup key
-        test_zone = (env.ctx.t_gate >= t) & (env.ctx.t_gate <= env.max_time)
-        dbm_list = test_zone.to_dbm_list()
-        
-        if not dbm_list: continue # Skip if time is out of bounds
-        
-        raw_matrix = dbm_list[0].to_matrix(mode="raw")
-        matrix_key = tuple(tuple(row) for row in raw_matrix)
-        
-        print(f"\n[Time: {t}s] Matrix Key: {matrix_key}")
+    action_symbols = {0: "↑", 1: "↓", 2: "←", 3: "→"}
+    zones = _get_learned_zones(agent, env)
+
+    print(f"\n=== THE SYMBOLIC POLICY ATLAS ({len(zones)} zones) ===")
+
+    for t_min, matrix_key in zones:
+        print(f"\n[t_gate >= {t_min}  |  budget: {env.max_time - t_min}s remaining]")
         print("-" * 20)
 
         for y in range(env.grid_size - 1, -1, -1):
             row = []
             for x in range(env.grid_size):
                 state = ((x, y), True, matrix_key)
-                
                 if (x, y) == env.goal:
                     row.append(" [G] ")
                 elif (x, y) == env.obstacle:
                     row.append(" [X] ")
                 elif state in agent.q_table:
-                    # Check if the agent has actually learned something here
                     q_vals = agent.q_table[state]
                     if np.all(q_vals == 0):
-                        row.append("  ?  ") # Explored but no reward propagated
+                        row.append("  ?  ")
                     else:
                         best_action = np.argmax(q_vals)
                         row.append(f"  {action_symbols[best_action]}  ")
                 else:
-                    row.append("  .  ") # Never visited this tile at this time
+                    row.append("  .  ")
             print("".join(row))
 
 if __name__ == "__main__":

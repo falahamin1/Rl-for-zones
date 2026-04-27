@@ -19,9 +19,9 @@ class MarshlandSprintEnv:
 
     def reset(self):
         self.pos = (0, 0)
-        self.gate_open = False
-        self.t_min = 0  
-        self.zone = (self.ctx.t_gate == 0)
+        self.gate_open = True
+        self.t_min = 0
+        self.zone = (self.ctx.t_gate >= 0) & (self.ctx.t_gate <= self.max_time)
         
         if self.debug:
             print(f"\n[RESET] Position: {self.pos} | State: {self.render_symbolic_state()}")
@@ -49,67 +49,58 @@ class MarshlandSprintEnv:
         return (self.pos, self.gate_open, matrix_tuple)
 
     def step(self, action):
-        action_names = {0: "UP", 1: "DOWN", 2: "LEFT", 3: "RIGHT", 4: "PRESS"}
-        # 1. Action: Press Button
-        if action == 4:
-            if self.pos == self.button and not self.gate_open:
-                self.gate_open = True
-                self.t_min = 0
-                self.zone = (self.ctx.t_gate >= 0) & (self.ctx.t_gate <= self.max_time)
-                if self.debug: 
-                    print(f"--- Action: PRESS (Gate Opened!) ---")
-                    print(f"    Initial Budget: {self.render_symbolic_state()}")
-                return self._get_obs(), -1, False
-            return self._get_obs(), -10, False
+        action_names = {0: "UP", 1: "DOWN", 2: "LEFT", 3: "RIGHT"}
 
-        # 2. Movement Logic
-        
+        # 1. Movement Logic
         moves = {0: (0, 1), 1: (0, -1), 2: (-1, 0), 3: (1, 0)}
-        if action not in moves: 
+        if action not in moves:
             return self._get_obs(), -1, False
-        
+
         dx, dy = moves[action]
         new_x, new_y = self.pos[0] + dx, self.pos[1] + dy
-        
 
         if not (0 <= new_x < self.grid_size and 0 <= new_y < self.grid_size) or (new_x, new_y) == self.obstacle:
             if self.debug: print(f"--- Action: {action_names[action]} (Invalid Move) ---")
-            return self._get_obs(), -5, False 
-        
-        # 3. Probabilistic Time Passage
+            return self._get_obs(), -5, False
+
+        # 2. Probabilistic Time Passage
         time_inc = 3
         slipped = False
         if (new_x, new_y) == self.muddy_tile:
             if random.random() < 0.5:
-                time_inc = 12 # twelve seconds if slipped
+                time_inc = 12
                 slipped = True
-        
-        # 4. Symbolic Zone Update
+
+        # 3. Symbolic Zone Update
         if self.gate_open:
             self.t_min += time_inc
-            # Update the zone
             self.zone = (self.ctx.t_gate >= self.t_min) & (self.ctx.t_gate <= self.max_time)
 
-        # 5. Debug Printout
+        # 4. Debug Printout
         if self.debug:
-            
             slip_str = " (SLIPPED!)" if slipped else ""
             print(f"--- Action: {action_names[action]}{slip_str} ---")
             print(f"    New Pos: {(new_x,new_y)} | Min Time Elapsed: {self.t_min}")
             print(f"    Zone: {self.render_symbolic_state()}")
 
-        # 6. Termination & Rewards
+        # 5. Update Position
         self.pos = (new_x, new_y)
+
+        # 6. Auto-press: arriving at (0,0) opens the gate
+        if self.pos == self.button and not self.gate_open:
+            self.gate_open = True
+            self.t_min = 0
+            self.zone = (self.ctx.t_gate >= 0) & (self.ctx.t_gate <= self.max_time)
+            if self.debug:
+                print(f"    [AUTO-PRESS] Gate Opened at {self.pos}!")
+                print(f"    Initial Budget: {self.render_symbolic_state()}")
+
         obs = self._get_obs()
 
+        # 7. Termination & Rewards
         if self.zone.is_empty():
-
-            if self.gate_open:
-                if self.debug: print("!!! TERMINAL: GATE CLOSED (ZONE EMPTY) !!!")
-                return obs, -100, True
-            else:
-                if self.debug: print("!!! TERMINAL: TIME EXPIRED (ZONE EMPTY) !!!")
-                return obs, -100, True
+            if self.debug: print("!!! TERMINAL: TIME EXPIRED (ZONE EMPTY) !!!")
+            return obs, -100, True
 
         if self.pos == self.goal and self.gate_open:
             if self.debug: print("!!! TERMINAL: GOAL REACHED !!!")
@@ -119,7 +110,7 @@ class MarshlandSprintEnv:
 
 if __name__ == "__main__":
         env = MarshlandSprintEnv(debug=True)
-        test_actions = [0, 4, 3, 0] 
+        test_actions = [3, 0, 0, 2]
         for act in test_actions:
             obs, rew, done = env.step(act)
             if done: break
