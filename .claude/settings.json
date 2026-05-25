@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:pyudbm.readthedocs.io)",
+      "WebFetch(domain:pypi.org)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:homes.cs.aau.dk)",
+      "Bash(pip install *)",
+      "Bash(python -)",
+      "Bash(python3 run_symbolic_rl.py)",
+      "Bash(python run_benchmark.py --fast)"
+    ]
+  }
+}

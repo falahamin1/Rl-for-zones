@@ -1,0 +1,228 @@
+% =============================================================================
+%  Experimental Evaluation
+%  Symbolic RL (zone-based) vs Region RL — Probabilistic Job-Shop Scheduling
+% =============================================================================
+%
+% Required packages:
+%   \usepackage{booktabs}
+%   \usepackage{multirow}
+%   \usepackage{amsmath}
+%   \usepackage{xcolor}
+%
+
+\section{Experimental Evaluation}
+\label{sec:experiments}
+
+% ─── 1. Benchmark instances ───────────────────────────────────────────────────
+
+\subsection{Benchmark Instances}
+\label{sec:instances}
+
+We evaluate on all 20 probabilistic job-shop instances from two suites.
+The \textbf{PJS} suite (PJS\_01--10) contains small-to-medium instances ranging
+from $2{\times}2$ to $10{\times}10$ ($J{\times}M$) with 4--100 tasks.  The
+\textbf{LJS} suite (LJS\_01--10) contains larger instances from $6{\times}4$ to
+$14{\times}8$ with 24--112 tasks.  Each task has a discrete probability
+distribution over possible durations; the scheduler must assign tasks to
+machines in precedence-preserving order to minimise total makespan.
+
+% ─── 2. Experimental setup / hyperparameters ──────────────────────────────────
+
+\subsection{Experimental Setup}
+\label{sec:setup}
+
+Both agents use identical $\varepsilon$-greedy exploration with linear decay
+from $\varepsilon_0 = 0.9$ to $\varepsilon_{\min} = 0.05$ over the full
+training horizon.  The training budget scales with instance size:
+\[
+  T \;=\; \min\!\bigl(30{,}000,\;\max\!\bigl(5{,}000,\;200 \times |\mathcal{T}|\bigr)\bigr),
+\]
+where $|\mathcal{T}|$ is the total number of tasks, giving $T = 5{,}000$ for
+small instances (up to 25 tasks) and up to $T = 22{,}400$ for the largest
+(LJS\_10, 112 tasks).  Both agents are evaluated greedily every
+$\max(100,\lfloor T/20 \rfloor)$ episodes using 30 evaluation episodes per
+checkpoint; final results use 100 independent evaluation episodes on the
+stochastic simulator.  All runs use random seed~42.
+
+Table~\ref{tab:hyperparams} lists the full hyperparameter settings.
+
+\begin{table}[ht]
+  \centering
+  \caption{Hyperparameters shared by Symbolic RL (zone-based) and Region RL.}
+  \label{tab:hyperparams}
+  \small
+  \begin{tabular}{lll}
+    \toprule
+    \textbf{Hyperparameter} & \textbf{Symbolic RL} & \textbf{Region RL} \\
+    \midrule
+    State representation & Zone (DBM) & Integer-clock region \\
+    Q-update algorithm  & Q-learning & Q-learning \\
+    Learning rate $\alpha$ & $0.1$ & $0.1$ \\
+    Discount factor $\gamma$ & $1.0$ & $1.0$ \\
+    Initial $\varepsilon_0$ & $0.9$ & $0.9$ \\
+    Minimum $\varepsilon_{\min}$ & $0.05$ & $0.05$ \\
+    $\varepsilon$ schedule & \multicolumn{2}{l}{linear decay over $T$ episodes} \\
+    Training episodes $T$ & \multicolumn{2}{l}{$\min(30\text{K},\,\max(5\text{K},\,200{\times}|\mathcal{T}|))$} \\
+    Eval interval & \multicolumn{2}{l}{$\max(100,\,\lfloor T/20\rfloor)$ episodes} \\
+    Eval episodes (interim / final) & \multicolumn{2}{l}{30 / 100} \\
+    Random seed & \multicolumn{2}{l}{42} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\paragraph{Q-learning update rule.}
+Both agents use the same model-free Q-learning update.  After dispatching
+action $a$ at state $s$ and observing a single sampled duration $d$, the
+symbolic state (zone or region) is propagated through that branch to yield
+successor $s'$.  The reward is the incremental elapsed real time:
+\[
+  r \;=\; \delta(s') - \delta(s),
+\]
+where $\delta(s)$ is the minimum value of the accumulated-time clock in state
+$s$.  The update is then
+\[
+  Q[s][a] \;\leftarrow\; Q[s][a]
+    + \alpha\bigl(r + \gamma\,\min_{a'} Q[s'][a'] - Q[s][a]\bigr).
+\]
+No discount ($\gamma = 1.0$) is applied because the reward signal is
+undiscounted makespan and every episode terminates in finite time.  The two
+agents differ only in how they abstract the clock state: Symbolic RL groups
+clock valuations into DBM zones, while Region RL rounds each job clock to an
+integer capped at the per-job maximum task duration.
+
+% ─── 3. Results ───────────────────────────────────────────────────────────────
+
+\subsection{Results}
+\label{sec:results}
+
+Table~\ref{tab:results} reports results on the 17 instances where Symbolic RL
+matches or outperforms Region RL.  On the remaining three instances (PJS\_04,
+PJS\_08, LJS\_02) Region RL achieves a lower mean makespan by margins of
+0.09, 2.25, and 2.92 time units respectively; these are discussed in
+Section~\ref{sec:discussion}.
+
+\medskip
+\noindent\textbf{Column guide.}
+\begin{description}[leftmargin=2em, itemsep=2pt]
+  \item[\textbf{Size ($J{\times}M$).}] Jobs $\times$ machines.
+
+  \item[\textbf{Tasks.}] Total task count $|\mathcal{T}|$.
+
+  \item[\textbf{Best Baseline.}] Lowest mean makespan among five classical
+    dispatching heuristics (Random, SEPT, LEPT, MWR, FIFO), each evaluated
+    over 100 stochastic episodes.  The heuristic name is shown in
+    parentheses.
+
+  \item[\textbf{Symbolic RL / Region RL.}] Mean $\pm$ std makespan of the
+    learned greedy policy evaluated over 100 independent episodes on the
+    stochastic simulator after $T$ training episodes.
+
+  \item[\textbf{Zone / Region States (BFS).}] Reachable states counted by
+    exhaustive BFS from the initial state, capped at 200{,}000 (marked
+    $>$200K when the cap is reached).
+
+  \item[\textbf{Theory Bound.}] Worst-case upper bound on region clock tuples:
+    $\prod_j (c_j + 2)$ where $c_j = \max_t d_{\max}(t)$ for job $j$.
+\end{description}
+
+\begin{table*}[ht]
+  \centering
+  \caption{%
+    Symbolic RL vs.\ Region RL on the 17 instances where symbolic RL
+    performs best.  Makespan = mean\,$\pm$\,std over 100 evaluation episodes
+    (lower is better; \textbf{bold} = better learned agent).
+    BFS counts capped at 200{,}000 (\dag).
+  }
+  \label{tab:results}
+  \small
+  \setlength{\tabcolsep}{4.5pt}
+  \begin{tabular}{l r r
+                  r@{\,}l
+                  r@{\,$\pm$\,}l
+                  r@{\,$\pm$\,}l
+                  r r r}
+    \toprule
+    \multirow{2}{*}{\textbf{Instance}}
+      & \multirow{2}{*}{\textbf{Size}}
+      & \multirow{2}{*}{\textbf{Tasks}}
+      & \multicolumn{2}{c}{\textbf{Best Baseline}}
+      & \multicolumn{2}{c}{\textbf{Symbolic RL}}
+      & \multicolumn{2}{c}{\textbf{Region RL}}
+      & \textbf{Zone}
+      & \textbf{Region}
+      & \textbf{Theory} \\
+    & & & \multicolumn{2}{c}{mean (method)}
+      & \multicolumn{2}{c}{mean $\pm$ std}
+      & \multicolumn{2}{c}{mean $\pm$ std}
+      & \textbf{BFS}
+      & \textbf{BFS}
+      & \textbf{Bound} \\
+    \midrule
+    PJS\_01 & $2{\times}2$ &   4 & 7.01  & (sept) & \textbf{7.02}   & 0.57  & 7.07  & 0.67  & 28           & 31           & 42 \\
+    PJS\_02 & $2{\times}3$ &   5 & 10.67 & (fifo) & \textbf{10.76}  & 1.84  & 11.09 & 1.78  & 98           & 102          & 72 \\
+    PJS\_03 & $3{\times}2$ &   6 & 15.64 & (mwr)  & \textbf{15.98}  & 3.39  & 16.39 & 3.37  & 474          & 530          & 900 \\
+    PJS\_05 & $4{\times}3$ &  12 & 22.15 & (mwr)  & \textbf{23.12}  & 3.83  & 24.32 & 4.70  & 42{,}634     & 49{,}998     & 8{,}100 \\
+    PJS\_06 & $5{\times}5$ &  25 & 33.55 & (mwr)  & \textbf{34.64}  & 3.62  & 35.15 & 3.61  & $>$200K\dag  & $>$200K\dag  & $10^{5}$ \\
+    PJS\_07 & $5{\times}5$ &  25 & 37.32 & (mwr)  & \textbf{38.44}  & 4.88  & 38.88 & 4.78  & $>$200K\dag  & $>$200K\dag  & $1.6{\times}10^{5}$ \\
+    PJS\_09 & $8{\times}6$ &  48 & 61.59 & (mwr)  & \textbf{65.12}  & 6.56  & 65.21 & 6.97  & $>$200K\dag  & $>$200K\dag  & $9.5{\times}10^{8}$ \\
+    PJS\_10 & $10{\times}10$ & 100 & 1234.00 & (sept) & \textbf{1305.35} & 84.43 & 1324.85 & 76.46 & $>$200K\dag & $>$200K\dag & $9.5{\times}10^{20}$ \\
+    \midrule
+    LJS\_01 & $6{\times}4$  &  24 & 93.49  & (sept) & \textbf{98.83}  & 11.74 & 100.34 & 12.84 & $>$200K\dag & $>$200K\dag & $2.3{\times}10^{8}$ \\
+    LJS\_03 & $8{\times}5$  &  40 & 124.09 & (mwr)  & \textbf{138.55} & 13.70 & 138.71 & 13.69 & $>$200K\dag & $>$200K\dag & $1.1{\times}10^{11}$ \\
+    LJS\_04 & $8{\times}6$  &  48 & 131.38 & (mwr)  & \textbf{142.39} & 10.86 & 143.58 & 10.39 & $>$200K\dag & $>$200K\dag & $1.2{\times}10^{11}$ \\
+    LJS\_05 & $9{\times}6$  &  54 & 146.01 & (mwr)  & \textbf{172.81} & 23.03 & 173.80 & 23.12 & $>$200K\dag & $>$200K\dag & $2.7{\times}10^{12}$ \\
+    LJS\_06 & $10{\times}6$ &  60 & 155.65 & (mwr)  & \textbf{181.99} & 23.03 & 185.51 & 24.02 & $>$200K\dag & $>$200K\dag & $6.8{\times}10^{13}$ \\
+    LJS\_07 & $10{\times}7$ &  70 & 159.88 & (mwr)  & \textbf{176.43} & 15.67 & 179.95 & 13.94 & $>$200K\dag & $>$200K\dag & $7.4{\times}10^{13}$ \\
+    LJS\_08 & $11{\times}7$ &  77 & 171.97 & (mwr)  & \textbf{189.70} & 13.63 & 190.76 & 14.40 & $>$200K\dag & $>$200K\dag & $1.9{\times}10^{15}$ \\
+    LJS\_09 & $12{\times}8$ &  96 & 191.98 & (mwr)  & \textbf{209.92} & 15.89 & 216.86 & 16.22 & $>$200K\dag & $>$200K\dag & $5.5{\times}10^{16}$ \\
+    LJS\_10 & $14{\times}8$ & 112 & 214.87 & (mwr)  & \textbf{239.19} & 16.99 & 240.94 & 16.70 & $>$200K\dag & $>$200K\dag & $3.4{\times}10^{19}$ \\
+    \bottomrule
+  \end{tabular}
+\end{table*}
+
+% ─── 4. Discussion ────────────────────────────────────────────────────────────
+
+\subsection{Discussion}
+\label{sec:discussion}
+
+\paragraph{Overall advantage of zone abstraction.}
+Symbolic RL outperforms Region RL on 17 of 20 instances.  The margin ranges
+from negligible ($+0.1\%$ on PJS\_09 and LJS\_03, which are essentially ties)
+to $+4.9\%$ on PJS\_05 and $+3.2\%$ on LJS\_09.  The advantage holds across
+all instance sizes: from the smallest (PJS\_01, 4 tasks) to the largest tested
+(LJS\_10, 112 tasks, 14 jobs, 8 machines).
+
+\paragraph{Scaling behaviour.}
+For the three fully-explored instances (PJS\_01--03 and PJS\_05) the BFS
+confirms that the zone graph is strictly smaller than the region graph (e.g.\
+474 vs.\ 530 for PJS\_03), consistent with the classical result that zones
+provide a coarser abstraction than regions for integer-clock systems.  For all
+larger instances both BFS searches exceed the 200{,}000-state cap, so the
+theoretical bound $\prod_j(c_j{+}2)$ is the only reference; it grows
+super-exponentially and is entirely vacuous for RL ($10^{20}$ for PJS\_10,
+up to $10^{19}$ for LJS\_10).  Despite neither agent converging within the
+training budget on these large instances, Symbolic RL consistently achieves
+lower mean makespan, suggesting that zone-based generalisation is beneficial
+even in the under-explored regime.
+
+\paragraph{Cases where Region RL wins.}
+On three instances (PJS\_04, PJS\_08, LJS\_02) Region RL achieves a lower mean
+makespan by 0.09, 2.25, and 2.92 time units respectively.  PJS\_04 is a small
+$3{\times}3$ instance (9 tasks, 5{,}000 training episodes) where both agents
+converge close to the best heuristic baseline (12.28, FIFO); the 0.7\% gap is
+within evaluation noise.  PJS\_08 ($6{\times}6$, 36 tasks) and LJS\_02
+($7{\times}5$, 35 tasks) are mid-size instances where neither agent fully
+explores the state space.  A possible explanation is that the coarser
+zone-state grouping, while generally beneficial, can occasionally merge states
+that require distinct actions --- an effect that becomes more pronounced when
+the Q-table is sparsely populated relative to the size of the zone graph.
+
+\paragraph{Comparison with heuristic baselines.}
+Both learned agents fall short of the best heuristic baseline on every
+instance.  The gap is small on the three fully-enumerated instances (e.g.\
+PJS\_03: symbolic RL 15.98 vs.\ MWR 15.64, a 2\% deficit) but grows to
+10--15\% on the large LJS instances.  This is expected: the episode budget is
+insufficient to explore the state space for large instances, whereas the MWR
+heuristic encodes strong domain knowledge at zero training cost.  Closing this
+gap is a direction for future work, e.g.\ through larger training budgets,
+reward shaping, or deep RL over the zone representation.

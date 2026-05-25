@@ -1,0 +1,12 @@
+Instance,size,Jobs,Machines,Tasks,best_baseline_name,best_baseline_mean,best_baseline_std,symbolic_rl_mean,symbolic_rl_std,zone_graph_bfs,zone_graph_truncated,region_rl_mean,region_rl_std,region_graph_bfs,region_graph_truncated,region_states_theory
+PJS_01,2×2,2,2,4,sept,7.01,0.57,7.0,0.57,28,False,7.07,0.67,31,False,42
+PJS_02,2×3,2,3,5,fifo,10.67,1.96,10.79,1.86,98,False,11.09,1.78,102,False,72
+PJS_03,3×2,3,2,6,mwr,15.64,3.85,15.55,3.59,474,False,16.39,3.37,530,False,900
+PJS_05,4×3,4,3,12,mwr,22.15,3.92,23.69,4.44,42634,False,24.32,4.7,49998,False,8100
+PJS_06,5×5,5,5,25,mwr,33.55,2.69,34.43,3.87,200004,True,35.15,3.61,200003,True,100000
+PJS_07,5×5,5,5,25,mwr,37.32,3.87,38.13,5.3,200000,True,38.88,4.78,200002,True,161051
+PJS_08,6×6,6,6,36,mwr,64.39,4.43,71.03,7.35,200003,True,77.73,11.15,200001,True,10368000
+PJS_09,8×6,8,6,48,mwr,61.59,5.08,64.85,6.64,200002,True,65.21,6.97,200002,True,946054564
+LJS_08,11×7,11,7,77,mwr,171.97,9.15,188.68,13.33,200006,True,190.76,14.4,200006,True,1856536865234375
+LJS_09,12×8,12,8,96,mwr,191.98,8.03,212.34,17.55,200002,True,216.86,16.22,200002,True,54836273193359375
+LJS_10,14×8,14,8,112,mwr,214.87,8.83,238.53,16.48,200005,True,240.94,16.7,200005,True,34272670745849609375
